@@ -1,11 +1,24 @@
 import { WebSocket, WebSocketServer } from 'ws';
 
-function mapToRobot({ x, y, z }) {
-  const robotX = x * 60; // cm
-  const robotY = y * 40; // cm
-  const robotZ = (z + 0.1) * 30; // ajusta profundidade
+function isIndexPointing(landmarks) {
+  const palm = landmarks[9];
 
-  return { robotX, robotY, robotZ };
+  const indexTip = landmarks[8];
+  const middleTip = landmarks[12];
+  const ringTip = landmarks[16];
+  const pinkyTip = landmarks[20];
+
+  const distIndex = distance(indexTip, palm);
+  const distMiddle = distance(middleTip, palm);
+  const distRing = distance(ringTip, palm);
+  const distPinky = distance(pinkyTip, palm);
+
+  return (
+    distIndex > 0.12 && // indicador longe
+    distMiddle < 0.09 &&
+    distRing < 0.09 &&
+    distPinky < 0.09
+  );
 }
 
 function mapHandToJoints(landmarks) {
@@ -84,14 +97,16 @@ wss.on('connection', (ws) => {
 
     const joints = mapHandToJoints(landmarks);
 
-    if (robotWss.readyState === WebSocket.OPEN) {
-      console.log(joints);
-      robotWss.send(
-        JSON.stringify({
-          ...joints,
-          action: 'move',
-        }),
-      );
+    if (isIndexPointing(landmarks)) {
+      if (robotWss.readyState === WebSocket.OPEN) {
+        console.log(joints);
+        robotWss.send(
+          JSON.stringify({
+            ...joints,
+            action: 'move',
+          }),
+        );
+      }
     }
   });
 });
