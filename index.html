@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MediaPipe Hands - Visualização</title>
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas {
+        position: absolute;
+      }
+      #status {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        color: #fff;
+        font-size: 18px;
+        font-family: Arial;
+        background: rgba(0, 0, 0, 0.6);
+        padding: 8px 16px;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="status">Conectando WebSocket...</div>
+    <video class="input_video" style="display: none"></video>
+    <canvas class="output_canvas"></canvas>
+
+    <script>
+      const videoElement = document.querySelector('.input_video');
+      const canvasElement = document.querySelector('.output_canvas');
+      const canvasCtx = canvasElement.getContext('2d');
+
+      /* ---------------- WEBSOCKET ---------------- */
+      const socket = new WebSocket('ws://localhost:8080');
+
+      socket.onopen = () => (status.innerText = 'WebSocket conectado');
+      socket.onerror = () => (status.innerText = 'Erro no WebSocket');
+
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+
+      /* ---------------- MEDIAPIPE ---------------- */
+      const hands = new Hands({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
+      });
+
+      let latestLandmarks = null;
+      hands.onResults((results) => {
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        // DESENHA O VÍDEO REAL DA WEBCAM (fluido)
+        canvasCtx.drawImage(
+          videoElement,
+          0,
+          0,
+          canvasElement.width,
+          canvasElement.height,
+        );
+
+        if (results.multiHandLandmarks) {
+          const landmarks = results.multiHandLandmarks[0];
+
+          latestLandmarks = landmarks;
+
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+            color: '#00FF00',
+            lineWidth: 3,
+          });
+
+          drawLandmarks(canvasCtx, landmarks, {
+            color: '#FF0000',
+            lineWidth: 2,
+          });
+        }
+
+        canvasCtx.restore();
+      });
+
+      /* ---------------- CAMERA ---------------- */
+      const camera = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480,
+      });
+
+      camera.start();
+
+      // ---------------- ENVIO VIA WEBSOCKET (30 FPS) ----------------
+      setInterval(() => {
+        if (!latestLandmarks) return;
+        if (socket.readyState !== 1) return;
+
+        socket.send(JSON.stringify(latestLandmarks));
+      }, 33); // 30 vezes por segundo
+    </script>
+  </body>
+</html>
